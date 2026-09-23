@@ -205,6 +205,14 @@ export async function createCloudTv(payload: Record<string, unknown>) {
   if (error) throw error;
 }
 
+export async function updateCloudTvPlaylist(id: number, playlistId: number | null) {
+  const { error } = await supabase
+    .from("tvs")
+    .update({ playlist_id: playlistId })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function createCloudPlaylist(name: string, mediaIds: number[]) {
   const { data, error } = await supabase.from("playlists").insert({ name, status: "active" }).select("id").single();
   if (error) throw error;
