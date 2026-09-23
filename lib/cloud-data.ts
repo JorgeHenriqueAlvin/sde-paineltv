@@ -136,14 +136,79 @@ function safeFileName(name: string) {
   return name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
+const SUPABASE_SAFE_UPLOAD_BYTES = 45 * 1024 * 1024;
+
+async function compressVideoInBrowser(file: File, onProgress: (progress: number) => void): Promise<File> {
+  if (!file.type.startsWith("video/") || file.size <= SUPABASE_SAFE_UPLOAD_BYTES) return file;
+  if (typeof document === "undefined" || typeof MediaRecorder === "undefined") {
+    throw new Error("Este navegador não oferece conversão automática de vídeo.");
+  }
+
+  const video = document.createElement("video");
+  video.preload = "auto";
+  video.muted = false;
+  video.playsInline = true;
+  const url = URL.createObjectURL(file);
+  video.src = url;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("Não foi possível abrir o vídeo para conversão."));
+    });
+    if (!Number.isFinite(video.duration) || video.duration <= 0) throw new Error("Duração do vídeo inválida.");
+
+    const captureStream = (video as HTMLVideoElement & { captureStream?: () => MediaStream }).captureStream;
+    if (!captureStream) throw new Error("Seu navegador não suporta conversão automática. Use Chrome ou Edge atualizado.");
+
+    const stream = captureStream.call(video);
+    const mimeType = ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+      .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+    if (!mimeType) throw new Error("Não há codec de vídeo compatível para conversão neste navegador.");
+
+    const targetBytes = 42 * 1024 * 1024;
+    const totalBitrate = Math.max(350_000, Math.floor((targetBytes * 8) / video.duration));
+    const audioBitsPerSecond = Math.min(96_000, Math.max(48_000, Math.floor(totalBitrate * 0.12)));
+    const videoBitsPerSecond = Math.max(300_000, totalBitrate - audioBitsPerSecond);
+    const chunks: Blob[] = [];
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond, audioBitsPerSecond });
+
+    const result = new Promise<Blob>((resolve, reject) => {
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.onerror = () => reject(new Error("Falha durante a conversão do vídeo."));
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType.split(";")[0] }));
+    });
+
+    const timer = window.setInterval(() => {
+      if (video.duration) onProgress(Math.min(35, Math.max(1, Math.round((video.currentTime / video.duration) * 35))));
+    }, 500);
+    recorder.start(1000);
+    await video.play();
+    await new Promise<void>((resolve) => { video.onended = () => resolve(); });
+    if (recorder.state !== "inactive") recorder.stop();
+    const blob = await result;
+    window.clearInterval(timer);
+    stream.getTracks().forEach((track) => track.stop());
+
+    if (!blob.size) throw new Error("A conversão gerou um arquivo vazio.");
+    if (blob.size > SUPABASE_SAFE_UPLOAD_BYTES) throw new Error("O vídeo convertido ainda excede o limite do armazenamento. Reduza a duração/resolução do vídeo.");
+    const base = file.name.replace(/\.[^.]+$/, "");
+    return new File([blob], `${base}-otimizado.webm`, { type: blob.type || "video/webm", lastModified: Date.now() });
+  } finally {
+    video.pause();
+    URL.revokeObjectURL(url);
+    video.remove();
+  }
+}
+
 export async function uploadCloudMedia(file: File, onProgress: (progress: number) => void) {
   requireConfiguration();
-  const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFileName(file.name)}`;
+  const uploadFile = await compressVideoInBrowser(file, onProgress);\n  const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFileName(uploadFile.name)}`;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
   const adminSession = window.localStorage.getItem("sde-admin-session") ?? "";
 
   await new Promise<void>((resolve, reject) => {
-    const upload = new tus.Upload(file, {
+    const upload = new tus.Upload(uploadFile, {
       endpoint: `https://${supabaseProjectId}.storage.supabase.co/storage/v1/upload/resumable`,
       retryDelays: [0, 1000, 3000, 5000, 10000],
       headers: {
@@ -157,12 +222,12 @@ export async function uploadCloudMedia(file: File, onProgress: (progress: number
       metadata: {
         bucketName: "tv-media",
         objectName: storagePath,
-        contentType: file.type || "application/octet-stream",
+        contentType: uploadFile.type || "application/octet-stream",
         cacheControl: "3600",
       },
       chunkSize: 6 * 1024 * 1024,
       onError: reject,
-      onProgress: (uploaded, total) => onProgress(Math.max(1, Math.round((uploaded / total) * 100))),
+      onProgress: (uploaded, total) => onProgress(Math.max(36, 35 + Math.round((uploaded / total) * 65))),
       onSuccess: () => resolve(),
     });
     upload.findPreviousUploads().then((previous) => {
