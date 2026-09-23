@@ -193,6 +193,21 @@ export async function deleteCloudMedia(id: number) {
   if (data?.storage_path) await supabase.storage.from("tv-media").remove([data.storage_path]);
 }
 
+export async function deleteCloudPlaylist(id: number) {
+  const { error } = await supabase.from("playlists").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteCloudSchedule(id: number) {
+  const { error } = await supabase.from("schedules").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteCloudTv(id: number) {
+  const { error } = await supabase.from("tvs").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function createCloudTv(payload: Record<string, unknown>) {
   const { error } = await supabase.from("tvs").insert({
     name: String(payload.name || "TV"),
