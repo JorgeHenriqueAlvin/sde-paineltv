@@ -140,6 +140,7 @@ export async function uploadCloudMedia(file: File, onProgress: (progress: number
   requireConfiguration();
   const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFileName(file.name)}`;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
+  const adminSession = window.localStorage.getItem("sde-admin-session") ?? "";
 
   await new Promise<void>((resolve, reject) => {
     const upload = new tus.Upload(file, {
@@ -149,6 +150,7 @@ export async function uploadCloudMedia(file: File, onProgress: (progress: number
         authorization: `Bearer ${publishableKey}`,
         apikey: publishableKey,
         "x-upsert": "false",
+        "x-admin-session": adminSession,
       },
       uploadDataDuringCreation: true,
       removeFingerprintOnSuccess: true,
