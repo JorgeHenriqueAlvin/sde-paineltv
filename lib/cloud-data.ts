@@ -203,7 +203,8 @@ async function compressVideoInBrowser(file: File, onProgress: (progress: number)
 
 export async function uploadCloudMedia(file: File, onProgress: (progress: number) => void) {
   requireConfiguration();
-  const uploadFile = await compressVideoInBrowser(file, onProgress);\n  const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFileName(uploadFile.name)}`;
+  const uploadFile = await compressVideoInBrowser(file, onProgress);
+  const storagePath = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}-${safeFileName(uploadFile.name)}`;
   const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
   const adminSession = window.localStorage.getItem("sde-admin-session") ?? "";
 
