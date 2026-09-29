@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Maximize, Monitor, RefreshCw, Tv } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePlayerPresence } from "@/lib/tv-presence";
 import { fetchCloudPlayer } from "@/lib/cloud-data";
 
 type Item={id:number;name:string;mimeType:string;duration:number;url:string};
@@ -12,6 +13,7 @@ export default function Player(){
  const [data,setData]=useState<PlayerData|null>(null),[index,setIndex]=useState(0),[code,setCode]=useState("");
  useEffect(()=>{const value=new URLSearchParams(location.search).get("code")||localStorage.getItem("tv-code")||"";setCode(value)},[]);
  useEffect(()=>{if(!code)return;localStorage.setItem("tv-code",code);let active=true;const load=async()=>{try{const result=await fetchCloudPlayer(code);if(active){setData(result as PlayerData);setIndex(current=>Math.min(current,Math.max(0,(result.items?.length||1)-1)))}}catch(error){console.error(error)}};void load();const timer=window.setInterval(()=>void load(),10000);return()=>{active=false;window.clearInterval(timer)}},[code]);
+ usePlayerPresence(code, Boolean(data?.paired));
  const item=data?.items?.[index];
  useEffect(()=>{if(!item||item.mimeType.startsWith("video"))return;const t=setTimeout(()=>setIndex(i=>(i+1)%(data?.items?.length||1)),(item.duration||10)*1000);return()=>clearTimeout(t)},[item,data?.items?.length]);
  const next=()=>setIndex(i=>(i+1)%(data?.items?.length||1));
